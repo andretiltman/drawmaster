@@ -54,17 +54,40 @@ export function playPurr(duration){
   duration = duration || 0.9;
   const ctx = getAudioCtx();
   const t0 = ctx.currentTime;
+
   const master = ctx.createGain();
   master.gain.setValueAtTime(0.0001, t0);
-  master.gain.exponentialRampToValueAtTime(0.22, t0+0.1);
-  master.gain.setValueAtTime(0.22, t0+Math.max(duration-0.2, 0.1));
+  master.gain.exponentialRampToValueAtTime(0.4, t0+0.15);
+  master.gain.setValueAtTime(0.4, t0+Math.max(duration-0.25, 0.1));
   master.gain.exponentialRampToValueAtTime(0.0001, t0+duration);
   master.connect(ctx.destination);
-  [44, 47].forEach(freq=>{
+
+  // a lowpass rounds off the sawtooth's harsh upper harmonics into a warm rumble
+  const lowpass = ctx.createBiquadFilter();
+  lowpass.type = 'lowpass';
+  lowpass.frequency.value = 220;
+  lowpass.connect(master);
+
+  // amplitude tremolo gives the purr its characteristic pulsing texture
+  const ampGain = ctx.createGain();
+  ampGain.gain.value = 0.5;
+  ampGain.connect(lowpass);
+  const tremolo = ctx.createOscillator();
+  tremolo.type = 'sine';
+  tremolo.frequency.value = 27; // real purrs pulse at roughly this rate
+  const tremoloDepth = ctx.createGain();
+  tremoloDepth.gain.value = 0.45;
+  tremolo.connect(tremoloDepth);
+  tremoloDepth.connect(ampGain.gain);
+  tremolo.start(t0);
+  tremolo.stop(t0+duration);
+
+  // two very-low, slightly-detuned tones — a real purr's fundamental sits around 25-30 Hz
+  [26, 27.5].forEach(freq=>{
     const osc = ctx.createOscillator();
     osc.type = 'sawtooth';
     osc.frequency.value = freq;
-    osc.connect(master);
+    osc.connect(ampGain);
     osc.start(t0);
     osc.stop(t0+duration);
   });
