@@ -10,22 +10,51 @@ export function getAudioCtx(){
   return audioCtx;
 }
 
+function createNoiseBuffer(ctx, duration){
+  const length = Math.max(1, Math.floor(ctx.sampleRate * duration));
+  const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for(let i=0;i<length;i++) data[i] = Math.random()*2 - 1;
+  return buffer;
+}
+
 export function playBark(){
   const ctx = getAudioCtx();
   const t0 = ctx.currentTime;
   for(let i=0;i<2;i++){
-    const start = t0 + i*0.16;
+    const start = t0 + i*0.18;
+
+    // a short filtered noise burst gives the bark a gritty, plosive onset
+    const noise = ctx.createBufferSource();
+    noise.buffer = createNoiseBuffer(ctx, 0.05);
+    const noiseFilter = ctx.createBiquadFilter();
+    noiseFilter.type = 'bandpass';
+    noiseFilter.frequency.value = 450;
+    noiseFilter.Q.value = 0.9;
+    const noiseGain = ctx.createGain();
+    noiseGain.gain.setValueAtTime(0.0001, start);
+    noiseGain.gain.exponentialRampToValueAtTime(0.5, start+0.008);
+    noiseGain.gain.exponentialRampToValueAtTime(0.0001, start+0.05);
+    noise.connect(noiseFilter).connect(noiseGain).connect(ctx.destination);
+    noise.start(start);
+    noise.stop(start+0.06);
+
+    // the tonal "woof" body — falling pitch, softened by a lowpass so it's
+    // not just a harsh raw sawtooth
     const osc = ctx.createOscillator();
+    const lowpass = ctx.createBiquadFilter();
+    lowpass.type = 'lowpass';
+    lowpass.frequency.value = 900;
     const gain = ctx.createGain();
     osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(340, start);
-    osc.frequency.exponentialRampToValueAtTime(150, start+0.1);
+    osc.frequency.setValueAtTime(380, start);
+    osc.frequency.exponentialRampToValueAtTime(140, start+0.12);
     gain.gain.setValueAtTime(0.0001, start);
-    gain.gain.exponentialRampToValueAtTime(0.55, start+0.015);
-    gain.gain.exponentialRampToValueAtTime(0.0001, start+0.14);
-    osc.connect(gain).connect(ctx.destination);
+    gain.gain.exponentialRampToValueAtTime(0.6, start+0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start+0.16);
+    osc.connect(lowpass).connect(gain).connect(ctx.destination);
     osc.start(start);
-    osc.stop(start+0.16);
+    osc.stop(start+0.18);
   }
 }
 
