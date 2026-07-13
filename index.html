@@ -462,7 +462,6 @@
       vx: (Math.random()<0.5?-1:1) * (30 + Math.random()*20),
       vy: 0,
       phase: Math.random()*Math.PI*2,
-      squish: 1,
       bornAt: performance.now()
     });
     spawnBurst(creatures[creatures.length-1].x, creatures[creatures.length-1].y);
@@ -496,16 +495,22 @@
 
     // update + draw creatures
     for(const c of creatures){
-      c.phase += dt*3.2;
-      const bob = Math.sin(c.phase) * 10;
+      // step cadence speeds up with stride speed, like a real walking gait
+      c.phase += (Math.abs(c.vx) * 0.11 + 0.6) * dt;
       c.x += c.vx*dt;
       if(c.x - c.w/2 < 0){ c.x = c.w/2; c.vx = Math.abs(c.vx); }
       if(c.x + c.w/2 > r.width){ c.x = r.width - c.w/2; c.vx = -Math.abs(c.vx); }
-      c.squish += (1 - c.squish)*Math.min(dt*8,1);
+
+      const dir = c.vx < 0 ? -1 : 1;
+      const stepBob = Math.abs(Math.sin(c.phase));      // two footfalls per cycle
+      const bob = stepBob * 7;                            // small human-scale bounce
+      const lean = Math.sin(c.phase*2) * 0.09 * dir;      // weight shifts side to side each step
+      const squashX = 1 + stepBob*0.06;                   // slight compress/stretch on footfall
+      const squashY = 1 - stepBob*0.06;
 
       const groundY = c.y;
-      const drawY = groundY - Math.abs(bob);
-      const shadowScale = 1 - Math.abs(bob)/60;
+      const drawY = groundY - bob;
+      const shadowScale = 1 - bob/40;
 
       // shadow
       lctx.save();
@@ -516,12 +521,12 @@
       lctx.fill();
       lctx.restore();
 
-      // creature (squash/stretch tied to bob velocity)
-      const stretch = 1 + Math.cos(c.phase)*0.05;
+      // creature (footstep bounce + weight-shift lean, like a walking stride)
       lctx.save();
       lctx.translate(c.x, drawY - c.h/2);
-      lctx.scale(c.vx<0 ? -1:1, 1);
-      lctx.scale(1/stretch, stretch);
+      lctx.rotate(lean);
+      lctx.scale(dir, 1);
+      lctx.scale(squashX, squashY);
       lctx.drawImage(c.img, -c.w/2, -c.h/2, c.w, c.h);
       lctx.restore();
     }
