@@ -29,6 +29,27 @@ export function playBark(){
   }
 }
 
+export function playTweet(){
+  const ctx = getAudioCtx();
+  const t0 = ctx.currentTime;
+  [0, 0.11].forEach((offset, i)=>{
+    const start = t0 + offset;
+    const base = 1800 + i*250;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(base, start);
+    osc.frequency.exponentialRampToValueAtTime(base*1.6, start+0.05);
+    osc.frequency.exponentialRampToValueAtTime(base*1.1, start+0.09);
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.exponentialRampToValueAtTime(0.3, start+0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start+0.09);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(start);
+    osc.stop(start+0.1);
+  });
+}
+
 export function playPurr(duration){
   duration = duration || 0.9;
   const ctx = getAudioCtx();
