@@ -149,6 +149,31 @@
     accent-color:var(--coral);
   }
 
+  #typeRow{
+    width:100%;
+    max-width:520px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+    padding:8px 2px 0;
+    flex:0 0 auto;
+    font-size:13px;
+    font-weight:700;
+    color:var(--text-soft);
+  }
+  #creatureType{
+    background:var(--ink-2);
+    color:#fff;
+    border:1.5px solid rgba(255,255,255,0.25);
+    border-radius:999px;
+    padding:7px 12px;
+    font-family:'Nunito',sans-serif;
+    font-weight:700;
+    font-size:13px;
+    cursor:pointer;
+  }
+
   #liveBtnWrap{ width:100%; max-width:520px; padding:6px 2px 4px; flex:0 0 auto; }
   #liveBtn{
     width:100%;
@@ -243,6 +268,15 @@
       </div>
     </div>
 
+    <div id="typeRow">
+      <span>Movement style</span>
+      <select id="creatureType" title="Movement style">
+        <option value="wanderer" selected>Wanderer</option>
+        <option value="cat">Cat</option>
+        <option value="dog">Dog</option>
+      </select>
+    </div>
+
     <div id="liveBtnWrap">
       <button id="liveBtn" disabled>Bring it to life ✨</button>
     </div>
@@ -294,6 +328,10 @@
 
   const brushSizeInput = document.getElementById('brushSizeInput');
   brushSizeInput.addEventListener('input', ()=>{ brushSize = Number(brushSizeInput.value); });
+
+  let creatureType = 'wanderer';
+  const creatureTypeSelect = document.getElementById('creatureType');
+  creatureTypeSelect.addEventListener('change', ()=>{ creatureType = creatureTypeSelect.value; });
 
   let drawing = false;
   let lastPt = null;
@@ -512,23 +550,79 @@
     }
   }
 
+  /* ---- synthesized sound effects (no audio files, generated with Web Audio) ---- */
+  let audioCtx = null;
+  function getAudioCtx(){
+    if(!audioCtx){
+      const AC = window.AudioContext || window.webkitAudioContext;
+      audioCtx = new AC();
+    }
+    if(audioCtx.state === 'suspended') audioCtx.resume();
+    return audioCtx;
+  }
+  function playBark(){
+    const ctx = getAudioCtx();
+    const t0 = ctx.currentTime;
+    for(let i=0;i<2;i++){
+      const start = t0 + i*0.16;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(340, start);
+      osc.frequency.exponentialRampToValueAtTime(150, start+0.1);
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(0.55, start+0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start+0.14);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(start);
+      osc.stop(start+0.16);
+    }
+  }
+  function playPurr(duration){
+    duration = duration || 0.9;
+    const ctx = getAudioCtx();
+    const t0 = ctx.currentTime;
+    const master = ctx.createGain();
+    master.gain.setValueAtTime(0.0001, t0);
+    master.gain.exponentialRampToValueAtTime(0.22, t0+0.1);
+    master.gain.setValueAtTime(0.22, t0+Math.max(duration-0.2, 0.1));
+    master.gain.exponentialRampToValueAtTime(0.0001, t0+duration);
+    master.connect(ctx.destination);
+    [44, 47].forEach(freq=>{
+      const osc = ctx.createOscillator();
+      osc.type = 'sawtooth';
+      osc.frequency.value = freq;
+      osc.connect(master);
+      osc.start(t0);
+      osc.stop(t0+duration);
+    });
+  }
+
   function addCreature(sprite){
     const r = stage.getBoundingClientRect();
     const targetH = Math.min(r.height*0.28, 220);
     const scale = targetH / sprite.height;
     const w = sprite.width*scale, h = sprite.height*scale;
     const { top, bottom } = floorBounds(r);
+    const type = creatureType;
+    const baseVx = type === 'dog' ? (70 + Math.random()*40)
+      : type === 'cat' ? (12 + Math.random()*8)
+      : (30 + Math.random()*20);
     creatures.push({
       id: creatures.length,
+      type,
       img: sprite,
       w, h,
       x: Math.random()*(r.width - w) + w/2,
       y: top + Math.random()*(bottom-top),
-      vx: (Math.random()<0.5?-1:1) * (30 + Math.random()*20),
+      vx: (Math.random()<0.5?-1:1) * baseVx,
       vy: 0,
       phase: Math.random()*Math.PI*2,
       renderScale: 1,
       groundColor: null,
+      state: type === 'dog' ? 'running' : type === 'cat' ? 'walking' : 'move',
+      behaviorT: type === 'dog' ? (1.2 + Math.random()*1.6) : type === 'cat' ? (2 + Math.random()*2.5) : 0,
+      jumpT: 0,
       bornAt: performance.now()
     });
     const c = creatures[creatures.length-1];
@@ -550,6 +644,63 @@
     }
   }
 
+  /* ---- per-species movement AI ---- */
+  function wallBounce(c, r){
+    if(c.x - c.w/2 < 0){ c.x = c.w/2; c.vx = Math.abs(c.vx); }
+    if(c.x + c.w/2 > r.width){ c.x = r.width - c.w/2; c.vx = -Math.abs(c.vx); }
+  }
+  function updateWanderer(c, dt, r){
+    c.x += c.vx*dt;
+    wallBounce(c, r);
+    return 0;
+  }
+  function updateDog(c, dt, r){
+    c.behaviorT -= dt;
+    if(c.state === 'running'){
+      c.x += c.vx*dt;
+      wallBounce(c, r);
+      if(c.behaviorT <= 0){
+        c.state = 'barking';
+        c.behaviorT = 0.5 + Math.random()*0.4;
+        c.pausedVx = c.vx;
+        c.vx = 0;
+        playBark();
+      }
+    } else if(c.behaviorT <= 0){
+      c.state = 'running';
+      c.behaviorT = 1.4 + Math.random()*1.6;
+      const speed = 70 + Math.random()*40;
+      c.vx = -Math.sign(c.pausedVx || 1) * speed; // reverse each time — runs back and forth
+    }
+    return 0;
+  }
+  function updateCat(c, dt, r){
+    c.behaviorT -= dt;
+    if(c.state === 'jumping'){
+      c.jumpT += dt/0.5;
+      c.x += c.vx*0.5*dt; // creep forward mid-pounce
+      wallBounce(c, r);
+      if(c.jumpT >= 1){
+        c.jumpT = 0;
+        c.state = 'walking';
+        c.behaviorT = 2 + Math.random()*2.5;
+      }
+      return Math.sin(Math.min(c.jumpT,1)*Math.PI) * 46; // jump arc height in px
+    }
+    c.x += c.vx*dt;
+    wallBounce(c, r);
+    if(c.behaviorT <= 0){
+      c.state = 'jumping';
+      c.jumpT = 0;
+    }
+    return 0;
+  }
+  function updateBehavior(c, dt, r){
+    if(c.type === 'dog') return updateDog(c, dt, r);
+    if(c.type === 'cat') return updateCat(c, dt, r);
+    return updateWanderer(c, dt, r);
+  }
+
   let lastTime = performance.now();
   let frameCount = 0;
   function loop(now){
@@ -566,11 +717,7 @@
     // update + draw creatures
     for(const c of creatures){
       const isDragging = dragging && dragging.c === c;
-      if(!isDragging){
-        c.x += c.vx*dt;
-        if(c.x - c.w/2 < 0){ c.x = c.w/2; c.vx = Math.abs(c.vx); }
-        if(c.x + c.w/2 > r.width){ c.x = r.width - c.w/2; c.vx = -Math.abs(c.vx); }
-      }
+      const jumpOffset = isDragging ? 0 : updateBehavior(c, dt, r);
       // step cadence speeds up with stride speed, like a real walking gait
       c.phase += (Math.abs(c.vx) * 0.11 + 0.6) * dt;
 
@@ -578,8 +725,9 @@
       const stepBob = Math.abs(Math.sin(c.phase));      // two footfalls per cycle
       const bob = stepBob * 7;                            // small human-scale bounce
       const lean = Math.sin(c.phase*2) * 0.09 * dir;      // weight shifts side to side each step
-      const squashX = 1 + stepBob*0.06;                   // slight compress/stretch on footfall
-      const squashY = 1 - stepBob*0.06;
+      const jumpT = jumpOffset / 46;                       // 0..1 while a cat is airborne
+      const squashX = 1 + stepBob*0.06 + jumpT*0.12;      // slight compress/stretch on footfall or leap
+      const squashY = 1 - stepBob*0.06 - jumpT*0.18;
 
       // depth: shrink/grow with distance from the "horizon" and pick up
       // the real floor's color under the creature's feet every few frames
@@ -591,8 +739,8 @@
 
       const w = c.w * c.renderScale, h = c.h * c.renderScale;
       const groundY = c.y;
-      const drawY = groundY - bob*c.renderScale;
-      const shadowScale = 1 - bob/40;
+      const drawY = groundY - bob*c.renderScale - jumpOffset;
+      const shadowScale = Math.max(0.15, 1 - bob/40 - jumpT*0.5);
 
       // shadow — tinted with the sampled floor color so it blends into the real surface
       lctx.save();
@@ -663,9 +811,15 @@
     const c = hitTest(x, y);
     if(c){
       liveCanvas.setPointerCapture(e.pointerId);
-      dragging = { c, x, y, t: performance.now(), vx: 0 };
+      dragging = { c, x, y, t: performance.now(), vx: 0, purrTimer: null };
       c.phase += Math.PI/2;
       spawnBurst(c.x, c.y - c.h/2);
+      if(c.type === 'dog'){
+        playBark();
+      }else if(c.type === 'cat'){
+        playPurr(1.1);
+        dragging.purrTimer = setInterval(()=>playPurr(1.1), 1000);
+      }
     }
   });
 
@@ -685,6 +839,7 @@
 
   function endDrag(){
     if(!dragging) return;
+    if(dragging.purrTimer) clearInterval(dragging.purrTimer);
     if(Math.abs(dragging.vx) > 20){
       dragging.c.vx = Math.max(-320, Math.min(320, dragging.vx));
     }
@@ -701,6 +856,7 @@
     const sprite = extractSprite();
     if(!sprite) return;
     liveBtn.disabled = true;
+    getAudioCtx(); // unlock audio now, on a user gesture, so later autonomous barks aren't blocked
     showLive();
     const ok = await startCamera();
     if(ok){
@@ -726,7 +882,7 @@
   });
 
   document.getElementById('helpBtn').addEventListener('click', ()=>{
-    alert("Draw a little creature or object on the paper, then tap \"Bring it to life\". Your camera turns on and your drawing appears living in your room. Drag it to fling it around!");
+    alert("Draw a little creature, pick a movement style (Wanderer, Cat, or Dog), then tap \"Bring it to life\". Your camera turns on and your drawing appears living in your room. Drag it to fling it around!");
   });
 
   // handle canvas resizing correctly when live screen becomes visible after being hidden
