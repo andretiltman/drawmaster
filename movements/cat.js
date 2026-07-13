@@ -1,7 +1,8 @@
 import { playPurr } from '../js/audio.js';
 import { findNearestOfType } from './utils.js';
 
-const CHASE_SPEED = 55;
+const CHASE_SPEED = 90; // faster than a bird's average speed, so the cat can actually gain on it
+const POUNCE_RANGE = 140; // only pounce once the bird is actually close
 
 /* Cat: ambles along slowly and periodically pounces/jumps. There's no real
    object detection here — it's a timed jump arc, not an actual leap onto
@@ -34,7 +35,8 @@ export const cat = {
     }
     c.x += c.vx*dt;
     wallBounce(c, r);
-    if(c.behaviorT <= 0){
+    const readyToPounce = !bird || bird.distance < POUNCE_RANGE;
+    if(c.behaviorT <= 0 && readyToPounce){
       c.state = 'jumping';
       c.jumpT = 0;
     }
