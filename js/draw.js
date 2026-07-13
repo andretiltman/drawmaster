@@ -25,6 +25,29 @@ export function createDrawingPad({
     swatchesEl.appendChild(b);
   });
 
+  // custom color swatch: clicking it opens a native color picker
+  const customSwatch = document.createElement('button');
+  customSwatch.type = 'button';
+  customSwatch.className = 'swatch swatch-custom';
+  customSwatch.title = 'Custom color';
+
+  const colorInput = document.createElement('input');
+  colorInput.type = 'color';
+  colorInput.value = currentColor;
+  colorInput.className = 'color-input-hidden';
+  colorInput.tabIndex = -1;
+
+  customSwatch.addEventListener('click', ()=> colorInput.click());
+  colorInput.addEventListener('input', ()=>{
+    currentColor = colorInput.value;
+    customSwatch.style.background = currentColor;
+    [...swatchesEl.children].forEach(ch=>ch.classList.remove('active'));
+    customSwatch.classList.add('active');
+  });
+
+  swatchesEl.appendChild(customSwatch);
+  swatchesEl.appendChild(colorInput);
+
   const brushSizeInput = document.getElementById(brushInputId);
   let brushSize = Number(brushSizeInput.value);
   brushSizeInput.addEventListener('input', ()=>{ brushSize = Number(brushSizeInput.value); });
