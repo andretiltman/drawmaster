@@ -142,6 +142,12 @@
     cursor:pointer;
   }
   .tool-group{ display:flex; gap:8px; align-items:center; }
+  .brush-slider{
+    flex:1 1 auto;
+    min-width:50px;
+    max-width:120px;
+    accent-color:var(--coral);
+  }
 
   #liveBtnWrap{ width:100%; max-width:520px; padding:6px 2px 4px; flex:0 0 auto; }
   #liveBtn{
@@ -210,6 +216,24 @@
     text-shadow:0 1px 4px rgba(0,0,0,0.6);
   }
 
+  #moveControls{
+    position:absolute; left:0; right:0; bottom:14px;
+    display:flex; justify-content:center; gap:22px;
+    z-index:4;
+  }
+  .move-btn{
+    width:52px; height:52px; border-radius:50%;
+    background:rgba(255,255,255,0.14);
+    border:1.5px solid rgba(255,255,255,0.35);
+    color:#fff;
+    font-size:20px;
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer;
+    touch-action:none;
+    user-select:none;
+  }
+  .move-btn:active{ background:rgba(255,255,255,0.32); }
+
   .hidden{ display:none !important; }
 </style>
 </head>
@@ -230,6 +254,7 @@
 
     <div class="toolbar">
       <div class="swatches" id="swatches"></div>
+      <input type="range" id="brushSizeInput" class="brush-slider" min="3" max="30" value="10" title="Brush size">
       <div class="tool-group">
         <button class="tool-btn" id="undoBtn" title="Undo">↺</button>
         <button class="tool-btn" id="clearDrawBtn" title="Clear">✕</button>
@@ -247,9 +272,14 @@
       <video id="camVideo" class="rear" autoplay playsinline muted></video>
       <canvas id="liveCanvas"></canvas>
       <div id="hint">tap your creature to boop it</div>
+      <div id="moveControls">
+        <button class="move-btn" id="moveLeftBtn" title="Move left">◀</button>
+        <button class="move-btn" id="moveRightBtn" title="Move right">▶</button>
+      </div>
       <div id="camMsg" class="hidden"></div>
     </div>
     <div id="liveFooter">
+      <button class="tool-btn" id="flipCamBtn" title="Flip camera">⟲</button>
       <button class="ghost-btn" id="addBtn">＋ Draw another</button>
       <button class="ghost-btn" id="clearBtn">Clear all</button>
     </div>
@@ -283,6 +313,9 @@
     });
     swatchesEl.appendChild(b);
   });
+
+  const brushSizeInput = document.getElementById('brushSizeInput');
+  brushSizeInput.addEventListener('input', ()=>{ brushSize = Number(brushSizeInput.value); });
 
   let drawing = false;
   let lastPt = null;
@@ -416,6 +449,8 @@
   const camMsg = document.getElementById('camMsg');
   const stage = document.getElementById('stage');
   let camStarted = false;
+  let camFacing = 'environment';
+  let currentStream = null;
   let creatures = [];
   let burst = []; // sparkle particles for transition
   let dpr = Math.min(window.devicePixelRatio||1, 2);
@@ -429,24 +464,39 @@
   }
   window.addEventListener('resize', resizeCanvas);
 
-  async function startCamera(){
-    if(camStarted) return true;
+  async function openCamera(facing){
     try{
       const stream = await navigator.mediaDevices.getUserMedia({
-        video:{ facingMode:'environment' }, audio:false
+        video:{ facingMode:facing }, audio:false
       });
+      if(currentStream) currentStream.getTracks().forEach(t=>t.stop());
+      currentStream = stream;
       video.srcObject = stream;
-      video.classList.add('rear');
+      video.classList.toggle('rear', facing === 'environment');
       await video.play();
-      camStarted = true;
-      resizeCanvas();
-      requestAnimationFrame(loop);
       return true;
     }catch(err){
       camMsg.classList.remove('hidden');
       camMsg.textContent = "Couldn't access your camera (" + (err.message||err.name) + "). Check camera permissions and try again.";
       return false;
     }
+  }
+
+  async function startCamera(){
+    if(camStarted) return true;
+    const ok = await openCamera(camFacing);
+    if(ok){
+      camStarted = true;
+      resizeCanvas();
+      requestAnimationFrame(loop);
+    }
+    return ok;
+  }
+
+  async function flipCamera(){
+    if(!camStarted) return;
+    camFacing = camFacing === 'environment' ? 'user' : 'environment';
+    await openCamera(camFacing);
   }
 
   function addCreature(sprite){
@@ -482,6 +532,8 @@
     }
   }
 
+  let steerDir = 0; // -1 left, 0 none, 1 right — driven by the on-screen move buttons
+
   let lastTime = performance.now();
   function loop(now){
     if(!camStarted){ return; }
@@ -495,6 +547,7 @@
 
     // update + draw creatures
     for(const c of creatures){
+      if(steerDir !== 0) c.vx = steerDir * 55;
       // step cadence speeds up with stride speed, like a real walking gait
       c.phase += (Math.abs(c.vx) * 0.11 + 0.6) * dt;
       c.x += c.vx*dt;
@@ -569,6 +622,14 @@
       spawnBurst(c.x, c.y - c.h/2);
     }
   });
+
+  [[document.getElementById('moveLeftBtn'), -1], [document.getElementById('moveRightBtn'), 1]].forEach(([btn, dir])=>{
+    btn.addEventListener('pointerdown', (e)=>{ e.preventDefault(); steerDir = dir; });
+    btn.addEventListener('pointerleave', ()=>{ if(steerDir === dir) steerDir = 0; });
+  });
+  window.addEventListener('pointerup', ()=>{ steerDir = 0; });
+
+  document.getElementById('flipCamBtn').addEventListener('click', flipCamera);
 
   /* ================= WIRE UP ACTIONS ================= */
   liveBtn.addEventListener('click', async ()=>{
