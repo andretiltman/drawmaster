@@ -4,7 +4,7 @@
 import { floorBounds, perspectiveScale } from './camera.js';
 import { getMovement } from '../movements/index.js';
 
-export function initScene({ stage, liveCanvas, camera }){
+export function initScene({ stage, liveCanvas, backdrop }){
   const lctx = liveCanvas.getContext('2d');
   const dpr = Math.min(window.devicePixelRatio||1, 2);
 
@@ -23,7 +23,7 @@ export function initScene({ stage, liveCanvas, camera }){
     liveCanvas.style.height = r.height+'px';
   }
   window.addEventListener('resize', resizeCanvas);
-  const ro = new ResizeObserver(()=>{ if(camera.isStarted()) resizeCanvas(); });
+  const ro = new ResizeObserver(()=>{ if(backdrop.isStarted()) resizeCanvas(); });
   ro.observe(stage);
 
   function spawnBurst(x,y){
@@ -71,7 +71,7 @@ export function initScene({ stage, liveCanvas, camera }){
   }
 
   function loop(now){
-    if(!camera.isStarted()) return;
+    if(!backdrop.isStarted()) return;
     const dt = Math.min((now-lastTime)/1000, 0.05);
     lastTime = now;
     frameCount++;
@@ -100,7 +100,7 @@ export function initScene({ stage, liveCanvas, camera }){
       // the real floor's color under the creature's feet every few frames
       c.renderScale = perspectiveScale(c.y, r);
       if((frameCount + c.id) % 9 === 0){
-        const sampled = camera.sampleGroundColor(c.x, c.y, r);
+        const sampled = backdrop.sampleGroundColor(c.x, c.y, r);
         if(sampled) c.groundColor = sampled;
       }
 

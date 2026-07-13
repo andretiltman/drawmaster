@@ -74,9 +74,9 @@
   }
   .screen.active{ display:flex; flex-direction:column; }
 
-  /* ---------- Draw screen ---------- */
-  #drawScreen{ padding:0 14px 14px; align-items:center; }
-  #canvasWrap{
+  /* ---------- Draw screens (creature + background) ---------- */
+  #drawScreen, #bgScreen{ padding:0 14px 14px; align-items:center; }
+  .canvasWrap{
     position:relative;
     flex:1 1 auto;
     width:100%;
@@ -86,7 +86,7 @@
     justify-content:center;
     min-height:0;
   }
-  #drawCanvas{
+  .padCanvas{
     width:100%;
     height:100%;
     max-width:520px;
@@ -101,7 +101,8 @@
     touch-action:none;
     cursor:crosshair;
   }
-  #promptTag{
+  #bgCanvas{ aspect-ratio:3/4; }
+  .promptTag{
     position:absolute;
     top:10px; left:50%; transform:translateX(-50%);
     background:var(--ink);
@@ -149,7 +150,7 @@
     accent-color:var(--coral);
   }
 
-  #typeRow{
+  .optionRow{
     width:100%;
     max-width:520px;
     display:flex;
@@ -162,7 +163,7 @@
     font-weight:700;
     color:var(--text-soft);
   }
-  #creatureType{
+  .pillSelect{
     background:var(--ink-2);
     color:#fff;
     border:1.5px solid rgba(255,255,255,0.25);
@@ -173,6 +174,7 @@
     font-size:13px;
     cursor:pointer;
   }
+  .pillSelect:disabled{ opacity:0.5; cursor:default; }
 
   #liveBtnWrap{ width:100%; max-width:520px; padding:6px 2px 4px; flex:0 0 auto; }
   #liveBtn{
@@ -208,6 +210,11 @@
     transform:scaleX(-1);
   }
   #camVideo.rear{ transform:none; }
+  #bgImage{
+    position:absolute; inset:0;
+    width:100%; height:100%;
+    object-fit:cover;
+  }
   #liveCanvas{
     position:absolute; inset:0;
     width:100%; height:100%;
@@ -254,9 +261,9 @@
 
   <!-- DRAW SCREEN -->
   <div class="screen active" id="drawScreen">
-    <div id="canvasWrap">
-      <div id="promptTag">draw something small &amp; simple</div>
-      <canvas id="drawCanvas" width="600" height="600"></canvas>
+    <div class="canvasWrap">
+      <div class="promptTag">draw something small &amp; simple</div>
+      <canvas id="drawCanvas" class="padCanvas" width="600" height="600"></canvas>
     </div>
 
     <div class="toolbar">
@@ -268,12 +275,20 @@
       </div>
     </div>
 
-    <div id="typeRow">
+    <div class="optionRow">
       <span>Movement style</span>
-      <select id="creatureType" title="Movement style">
+      <select id="creatureType" class="pillSelect" title="Movement style">
         <option value="wanderer" selected>Wanderer</option>
         <option value="cat">Cat</option>
         <option value="dog">Dog</option>
+      </select>
+    </div>
+
+    <div class="optionRow">
+      <span>Background</span>
+      <select id="backdropMode" class="pillSelect" title="Background">
+        <option value="camera" selected>Camera</option>
+        <option value="drawn">Draw it</option>
       </select>
     </div>
 
@@ -282,10 +297,32 @@
     </div>
   </div>
 
+  <!-- BACKGROUND DRAW SCREEN (only used when "Draw it" is picked above) -->
+  <div class="screen" id="bgScreen">
+    <div class="canvasWrap">
+      <div class="promptTag">draw the room or scene behind your creature</div>
+      <canvas id="bgCanvas" class="padCanvas" width="480" height="800"></canvas>
+    </div>
+
+    <div class="toolbar">
+      <div class="swatches" id="bgSwatches"></div>
+      <input type="range" id="bgBrushSizeInput" class="brush-slider" min="3" max="40" value="16" title="Brush size">
+      <div class="tool-group">
+        <button class="tool-btn" id="bgUndoBtn" title="Undo">↺</button>
+        <button class="tool-btn" id="bgClearBtn" title="Clear">✕</button>
+      </div>
+    </div>
+
+    <div id="liveBtnWrap">
+      <button id="setBgBtn">Set background ✨</button>
+    </div>
+  </div>
+
   <!-- LIVE SCREEN -->
   <div class="screen" id="liveScreen">
     <div id="stage">
       <video id="camVideo" class="rear" autoplay playsinline muted></video>
+      <img id="bgImage" class="hidden" alt="">
       <canvas id="liveCanvas"></canvas>
       <div id="hint">drag a creature to fling it around</div>
       <div id="camMsg" class="hidden"></div>

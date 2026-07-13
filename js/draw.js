@@ -1,15 +1,17 @@
-/* Draw screen: canvas, colors, brush size, undo/clear, and sprite extraction. */
-const RES = 600;
+/* A reusable drawing pad: canvas, colors, brush size, undo/clear, and sprite
+   extraction. Used for both the creature canvas and the background canvas. */
 
-export function initDraw(){
-  const drawCanvas = document.getElementById('drawCanvas');
-  const dctx = drawCanvas.getContext('2d', { willReadFrequently: true });
-  drawCanvas.width = RES; drawCanvas.height = RES;
+export function createDrawingPad({
+  canvasId, swatchesId, brushInputId, undoBtnId, clearBtnId,
+  width, height, fillStyle
+}){
+  const canvas = document.getElementById(canvasId);
+  const dctx = canvas.getContext('2d', { willReadFrequently: true });
+  canvas.width = width; canvas.height = height;
 
   const colors = ['#1C2333','#FF6B57','#2BC4B8','#FFC64B','#9B7EDE','#FFFFFF'];
   let currentColor = colors[0];
-  let brushSize = 10;
-  const swatchesEl = document.getElementById('swatches');
+  const swatchesEl = document.getElementById(swatchesId);
   colors.forEach((c,i)=>{
     const b = document.createElement('button');
     b.className = 'swatch' + (i===0?' active':'');
@@ -23,7 +25,8 @@ export function initDraw(){
     swatchesEl.appendChild(b);
   });
 
-  const brushSizeInput = document.getElementById('brushSizeInput');
+  const brushSizeInput = document.getElementById(brushInputId);
+  let brushSize = Number(brushSizeInput.value);
   brushSizeInput.addEventListener('input', ()=>{ brushSize = Number(brushSizeInput.value); });
 
   let drawing = false;
@@ -36,18 +39,27 @@ export function initDraw(){
     drawChangeListeners.forEach(fn => fn(hasDrawn));
   }
 
+  function paintBase(){
+    if(!fillStyle) return;
+    dctx.save();
+    dctx.fillStyle = fillStyle;
+    dctx.fillRect(0,0,width,height);
+    dctx.restore();
+  }
+  paintBase();
+
   function getPos(e){
-    const rect = drawCanvas.getBoundingClientRect();
+    const rect = canvas.getBoundingClientRect();
     const cx = (e.touches ? e.touches[0].clientX : e.clientX);
     const cy = (e.touches ? e.touches[0].clientY : e.clientY);
     return {
-      x: (cx - rect.left) / rect.width * RES,
-      y: (cy - rect.top) / rect.height * RES
+      x: (cx - rect.left) / rect.width * width,
+      y: (cy - rect.top) / rect.height * height
     };
   }
 
   function snapshot(){
-    strokes.push(dctx.getImageData(0,0,RES,RES));
+    strokes.push(dctx.getImageData(0,0,width,height));
     if(strokes.length > 20) strokes.shift();
   }
 
@@ -85,37 +97,38 @@ export function initDraw(){
     setHasDrawn(true);
   }
 
-  drawCanvas.addEventListener('pointerdown', pointerDown);
-  drawCanvas.addEventListener('pointermove', pointerMove);
+  canvas.addEventListener('pointerdown', pointerDown);
+  canvas.addEventListener('pointermove', pointerMove);
   window.addEventListener('pointerup', pointerUp);
 
   function isCanvasBlank(){
-    const d = dctx.getImageData(0,0,RES,RES).data;
+    const d = dctx.getImageData(0,0,width,height).data;
     for(let i=3;i<d.length;i+=4){ if(d[i] !== 0) return false; }
     return true;
   }
 
-  document.getElementById('undoBtn').addEventListener('click', ()=>{
+  document.getElementById(undoBtnId).addEventListener('click', ()=>{
     if(strokes.length){
       const img = strokes.pop();
       dctx.putImageData(img,0,0);
       setHasDrawn(!isCanvasBlank());
     }
   });
-  document.getElementById('clearDrawBtn').addEventListener('click', ()=>{
+  document.getElementById(clearBtnId).addEventListener('click', ()=>{
     snapshot();
-    dctx.clearRect(0,0,RES,RES);
+    dctx.clearRect(0,0,width,height);
+    paintBase();
     setHasDrawn(false);
   });
 
-  /* Extract the trimmed, drawn sprite as its own canvas. */
+  /* Extract the trimmed, drawn sprite as its own canvas (transparent margins removed). */
   function extractSprite(){
-    const data = dctx.getImageData(0,0,RES,RES);
+    const data = dctx.getImageData(0,0,width,height);
     const px = data.data;
-    let minX=RES, minY=RES, maxX=0, maxY=0, found=false;
-    for(let y=0; y<RES; y++){
-      for(let x=0; x<RES; x++){
-        const a = px[(y*RES+x)*4+3];
+    let minX=width, minY=height, maxX=0, maxY=0, found=false;
+    for(let y=0; y<height; y++){
+      for(let x=0; x<width; x++){
+        const a = px[(y*width+x)*4+3];
         if(a > 10){
           found = true;
           if(x<minX) minX=x;
@@ -128,16 +141,17 @@ export function initDraw(){
     if(!found) return null;
     const pad = 6;
     minX = Math.max(0,minX-pad); minY = Math.max(0,minY-pad);
-    maxX = Math.min(RES,maxX+pad); maxY = Math.min(RES,maxY+pad);
+    maxX = Math.min(width,maxX+pad); maxY = Math.min(height,maxY+pad);
     const w = maxX-minX, h = maxY-minY;
     const off = document.createElement('canvas');
     off.width = w; off.height = h;
-    off.getContext('2d').drawImage(drawCanvas, minX, minY, w, h, 0, 0, w, h);
+    off.getContext('2d').drawImage(canvas, minX, minY, w, h, 0, 0, w, h);
     return off;
   }
 
   function resetCanvas(){
-    dctx.clearRect(0,0,RES,RES);
+    dctx.clearRect(0,0,width,height);
+    paintBase();
     strokes = [];
     setHasDrawn(false);
   }
@@ -146,6 +160,7 @@ export function initDraw(){
     hasDrawn: () => hasDrawn,
     onDrawChange: (fn) => drawChangeListeners.push(fn),
     extractSprite,
+    getCanvasEl: () => canvas,
     resetCanvas
   };
 }
