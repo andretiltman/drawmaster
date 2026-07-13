@@ -22,39 +22,69 @@ export function playBark(){
   const ctx = getAudioCtx();
   const t0 = ctx.currentTime;
   for(let i=0;i<2;i++){
-    const start = t0 + i*0.18;
+    const start = Math.max(t0, t0 + i*0.2 + (Math.random()-0.5)*0.01);
+    const pitch = 1 + (Math.random()-0.5)*0.14; // each bark varies slightly, like a real dog's
 
-    // a short filtered noise burst gives the bark a gritty, plosive onset
+    // a short, chesty filtered noise burst gives the bark a gritty, plosive onset
     const noise = ctx.createBufferSource();
     noise.buffer = createNoiseBuffer(ctx, 0.05);
     const noiseFilter = ctx.createBiquadFilter();
     noiseFilter.type = 'bandpass';
-    noiseFilter.frequency.value = 450;
-    noiseFilter.Q.value = 0.9;
+    noiseFilter.frequency.value = 280;
+    noiseFilter.Q.value = 0.6;
     const noiseGain = ctx.createGain();
     noiseGain.gain.setValueAtTime(0.0001, start);
-    noiseGain.gain.exponentialRampToValueAtTime(0.5, start+0.008);
-    noiseGain.gain.exponentialRampToValueAtTime(0.0001, start+0.05);
+    noiseGain.gain.exponentialRampToValueAtTime(0.6, start+0.006);
+    noiseGain.gain.exponentialRampToValueAtTime(0.0001, start+0.045);
     noise.connect(noiseFilter).connect(noiseGain).connect(ctx.destination);
     noise.start(start);
     noise.stop(start+0.06);
 
-    // the tonal "woof" body — falling pitch, softened by a lowpass so it's
-    // not just a harsh raw sawtooth
-    const osc = ctx.createOscillator();
     const lowpass = ctx.createBiquadFilter();
     lowpass.type = 'lowpass';
-    lowpass.frequency.value = 900;
+    lowpass.frequency.value = 1100;
     const gain = ctx.createGain();
-    osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(380, start);
-    osc.frequency.exponentialRampToValueAtTime(140, start+0.12);
     gain.gain.setValueAtTime(0.0001, start);
-    gain.gain.exponentialRampToValueAtTime(0.6, start+0.02);
-    gain.gain.exponentialRampToValueAtTime(0.0001, start+0.16);
-    osc.connect(lowpass).connect(gain).connect(ctx.destination);
+    gain.gain.exponentialRampToValueAtTime(0.6, start+0.01);
+    gain.gain.exponentialRampToValueAtTime(0.1, start+0.07); // sharp initial decay
+    gain.gain.exponentialRampToValueAtTime(0.0001, start+0.17); // then a short tail
+    lowpass.connect(gain);
+    gain.connect(ctx.destination);
+
+    // growl: a fast, subtle vibrato on the main tone gives it vocal-fold roughness
+    // instead of a perfectly clean pitch sweep
+    const growl = ctx.createOscillator();
+    growl.type = 'sine';
+    growl.frequency.value = 55;
+    const growlDepth = ctx.createGain();
+    growlDepth.gain.value = 16;
+    growl.connect(growlDepth);
+    growl.start(start);
+    growl.stop(start+0.18);
+
+    // main tonal body — a sharp, front-loaded pitch drop (real barks snap down
+    // fast, not a smooth glide) plus vibrato from the growl oscillator above
+    const osc = ctx.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(300*pitch, start);
+    osc.frequency.exponentialRampToValueAtTime(160*pitch, start+0.04);
+    osc.frequency.exponentialRampToValueAtTime(115*pitch, start+0.14);
+    growlDepth.connect(osc.frequency);
+    osc.connect(lowpass);
     osc.start(start);
     osc.stop(start+0.18);
+
+    // an octave-down layer adds chest weight, so it reads as a "woof" rather
+    // than a thin beep
+    const sub = ctx.createOscillator();
+    sub.type = 'sawtooth';
+    sub.frequency.setValueAtTime(150*pitch, start);
+    sub.frequency.exponentialRampToValueAtTime(58*pitch, start+0.14);
+    const subGain = ctx.createGain();
+    subGain.gain.value = 0.6;
+    sub.connect(subGain).connect(lowpass);
+    sub.start(start);
+    sub.stop(start+0.18);
   }
 }
 
