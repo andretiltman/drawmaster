@@ -478,19 +478,57 @@
     await openCamera(camFacing);
   }
 
+  /* ---- ground mapping: fake depth by treating the lower part of the
+     camera frame as a "floor" creatures walk on, shrinking with distance
+     and picking up the real floor's color for their contact shadow ---- */
+  function floorBounds(r){
+    return { top: r.height*0.42, bottom: r.height*0.95 };
+  }
+  function perspectiveScale(y, r){
+    const { top, bottom } = floorBounds(r);
+    const t = Math.min(1, Math.max(0, (y-top)/(bottom-top)));
+    return 0.6 + 0.55*t; // smaller near the horizon, bigger up close
+  }
+
+  const sampleCanvas = document.createElement('canvas');
+  sampleCanvas.width = 6; sampleCanvas.height = 6;
+  const sctx = sampleCanvas.getContext('2d', {willReadFrequently:true});
+
+  function sampleGroundColor(x, y, r){
+    if(!video.videoWidth) return null;
+    const scale = Math.max(r.width/video.videoWidth, r.height/video.videoHeight);
+    const drawnW = video.videoWidth*scale, drawnH = video.videoHeight*scale;
+    const offsetX = (r.width-drawnW)/2, offsetY = (r.height-drawnH)/2;
+    let vx = (x-offsetX)/scale, vy = (y-offsetY)/scale;
+    if(!video.classList.contains('rear')) vx = video.videoWidth - vx; // mirrored display
+    try{
+      sctx.drawImage(video, vx-3, vy-3, 6, 6, 0, 0, 6, 6);
+      const d = sctx.getImageData(0,0,6,6).data;
+      let rs=0, gs=0, bs=0, n=0;
+      for(let i=0;i<d.length;i+=4){ rs+=d[i]; gs+=d[i+1]; bs+=d[i+2]; n++; }
+      return [rs/n, gs/n, bs/n];
+    }catch(e){
+      return null; // e.g. video frame not decodable yet
+    }
+  }
+
   function addCreature(sprite){
     const r = stage.getBoundingClientRect();
     const targetH = Math.min(r.height*0.28, 220);
     const scale = targetH / sprite.height;
     const w = sprite.width*scale, h = sprite.height*scale;
+    const { top, bottom } = floorBounds(r);
     creatures.push({
+      id: creatures.length,
       img: sprite,
       w, h,
       x: Math.random()*(r.width - w) + w/2,
-      y: r.height*0.55 + Math.random()*r.height*0.2,
+      y: top + Math.random()*(bottom-top),
       vx: (Math.random()<0.5?-1:1) * (30 + Math.random()*20),
       vy: 0,
       phase: Math.random()*Math.PI*2,
+      renderScale: 1,
+      groundColor: null,
       bornAt: performance.now()
     });
     const c = creatures[creatures.length-1];
@@ -513,10 +551,12 @@
   }
 
   let lastTime = performance.now();
+  let frameCount = 0;
   function loop(now){
     if(!camStarted){ return; }
     const dt = Math.min((now-lastTime)/1000, 0.05);
     lastTime = now;
+    frameCount++;
 
     const r = stage.getBoundingClientRect();
     lctx.save();
@@ -541,26 +581,37 @@
       const squashX = 1 + stepBob*0.06;                   // slight compress/stretch on footfall
       const squashY = 1 - stepBob*0.06;
 
+      // depth: shrink/grow with distance from the "horizon" and pick up
+      // the real floor's color under the creature's feet every few frames
+      c.renderScale = perspectiveScale(c.y, r);
+      if((frameCount + c.id) % 9 === 0){
+        const sampled = sampleGroundColor(c.x, c.y, r);
+        if(sampled) c.groundColor = sampled;
+      }
+
+      const w = c.w * c.renderScale, h = c.h * c.renderScale;
       const groundY = c.y;
-      const drawY = groundY - bob;
+      const drawY = groundY - bob*c.renderScale;
       const shadowScale = 1 - bob/40;
 
-      // shadow
+      // shadow — tinted with the sampled floor color so it blends into the real surface
       lctx.save();
-      lctx.globalAlpha = 0.28 * shadowScale;
-      lctx.fillStyle = '#000';
+      lctx.globalAlpha = 0.32 * shadowScale;
+      lctx.fillStyle = c.groundColor
+        ? `rgb(${Math.round(c.groundColor[0]*0.3)}, ${Math.round(c.groundColor[1]*0.3)}, ${Math.round(c.groundColor[2]*0.3)})`
+        : '#000';
       lctx.beginPath();
-      lctx.ellipse(c.x, groundY + c.h*0.06, (c.w*0.32)*shadowScale, c.h*0.08*shadowScale, 0, 0, Math.PI*2);
+      lctx.ellipse(c.x, groundY + h*0.06, (w*0.32)*shadowScale, h*0.08*shadowScale, 0, 0, Math.PI*2);
       lctx.fill();
       lctx.restore();
 
       // creature (footstep bounce + weight-shift lean, like a walking stride)
       lctx.save();
-      lctx.translate(c.x, drawY - c.h/2);
+      lctx.translate(c.x, drawY - h/2);
       lctx.rotate(lean);
       lctx.scale(dir, 1);
       lctx.scale(squashX, squashY);
-      lctx.drawImage(c.img, -c.w/2, -c.h/2, c.w, c.h);
+      lctx.drawImage(c.img, -w/2, -h/2, w, h);
       lctx.restore();
 
       // halo ring showing which creature is being dragged right now
@@ -571,7 +622,7 @@
         lctx.lineWidth = 3;
         lctx.setLineDash([7,5]);
         lctx.beginPath();
-        lctx.ellipse(c.x, drawY - c.h/2, c.w*0.62, c.h*0.62, 0, 0, Math.PI*2);
+        lctx.ellipse(c.x, drawY - h/2, w*0.62, h*0.62, 0, 0, Math.PI*2);
         lctx.stroke();
         lctx.restore();
       }
@@ -600,7 +651,8 @@
   function hitTest(x,y){
     for(let i=creatures.length-1;i>=0;i--){
       const c = creatures[i];
-      if(Math.abs(x-c.x) < c.w/2 && Math.abs(y-c.y) < c.h/2) return c;
+      const scale = c.renderScale || 1;
+      if(Math.abs(x-c.x) < (c.w*scale)/2 && Math.abs(y-c.y) < (c.h*scale)/2) return c;
     }
     return null;
   }
@@ -625,8 +677,9 @@
     const dt = Math.max((now - dragging.t)/1000, 0.001);
     const c = dragging.c;
     dragging.vx = (x - dragging.x) / dt;
+    const { top, bottom } = floorBounds(r);
     c.x = Math.min(r.width - c.w/2, Math.max(c.w/2, x));
-    c.y = Math.min(r.height - 10, Math.max(c.h + 20, y));
+    c.y = Math.min(bottom, Math.max(top, y));
     dragging.x = x; dragging.y = y; dragging.t = now;
   });
 
