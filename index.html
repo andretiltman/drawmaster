@@ -217,16 +217,23 @@
   }
 
   #moveControls{
-    position:absolute; left:0; right:0; bottom:14px;
-    display:flex; justify-content:center; gap:22px;
+    position:absolute; left:50%; bottom:14px; transform:translateX(-50%);
+    display:grid;
+    grid-template-columns:46px 46px 46px;
+    grid-template-rows:46px 46px 46px;
+    gap:6px;
     z-index:4;
   }
+  #moveUpBtn{ grid-column:2; grid-row:1; }
+  #moveLeftBtn{ grid-column:1; grid-row:2; }
+  #moveRightBtn{ grid-column:3; grid-row:2; }
+  #moveDownBtn{ grid-column:2; grid-row:3; }
   .move-btn{
-    width:52px; height:52px; border-radius:50%;
+    width:100%; height:100%; border-radius:50%;
     background:rgba(255,255,255,0.14);
     border:1.5px solid rgba(255,255,255,0.35);
     color:#fff;
-    font-size:20px;
+    font-size:18px;
     display:flex; align-items:center; justify-content:center;
     cursor:pointer;
     touch-action:none;
@@ -271,10 +278,12 @@
     <div id="stage">
       <video id="camVideo" class="rear" autoplay playsinline muted></video>
       <canvas id="liveCanvas"></canvas>
-      <div id="hint">tap your creature to boop it</div>
+      <div id="hint">tap a creature to select &amp; boop it</div>
       <div id="moveControls">
+        <button class="move-btn" id="moveUpBtn" title="Move up">▲</button>
         <button class="move-btn" id="moveLeftBtn" title="Move left">◀</button>
         <button class="move-btn" id="moveRightBtn" title="Move right">▶</button>
+        <button class="move-btn" id="moveDownBtn" title="Move down">▼</button>
       </div>
       <div id="camMsg" class="hidden"></div>
     </div>
@@ -452,6 +461,7 @@
   let camFacing = 'environment';
   let currentStream = null;
   let creatures = [];
+  let selected = null; // the creature currently controlled by the move buttons
   let burst = []; // sparkle particles for transition
   let dpr = Math.min(window.devicePixelRatio||1, 2);
 
@@ -514,7 +524,8 @@
       phase: Math.random()*Math.PI*2,
       bornAt: performance.now()
     });
-    spawnBurst(creatures[creatures.length-1].x, creatures[creatures.length-1].y);
+    selected = creatures[creatures.length-1];
+    spawnBurst(selected.x, selected.y);
   }
 
   function spawnBurst(x,y){
@@ -532,7 +543,8 @@
     }
   }
 
-  let steerDir = 0; // -1 left, 0 none, 1 right — driven by the on-screen move buttons
+  let steerDir = 0;  // -1 left, 0 none, 1 right — driven by the on-screen move buttons
+  let steerVert = 0; // -1 up, 0 none, 1 down
 
   let lastTime = performance.now();
   function loop(now){
@@ -547,7 +559,13 @@
 
     // update + draw creatures
     for(const c of creatures){
-      if(steerDir !== 0) c.vx = steerDir * 55;
+      if(c === selected){
+        if(steerDir !== 0) c.vx = steerDir * 55;
+        if(steerVert !== 0){
+          const minY = c.h + 20, maxY = r.height - 10;
+          c.y = Math.min(maxY, Math.max(minY, c.y + steerVert * 70 * dt));
+        }
+      }
       // step cadence speeds up with stride speed, like a real walking gait
       c.phase += (Math.abs(c.vx) * 0.11 + 0.6) * dt;
       c.x += c.vx*dt;
@@ -582,6 +600,19 @@
       lctx.scale(squashX, squashY);
       lctx.drawImage(c.img, -c.w/2, -c.h/2, c.w, c.h);
       lctx.restore();
+
+      // halo ring showing which creature the move buttons control
+      if(c === selected){
+        lctx.save();
+        lctx.globalAlpha = 0.9;
+        lctx.strokeStyle = '#2BC4B8';
+        lctx.lineWidth = 3;
+        lctx.setLineDash([7,5]);
+        lctx.beginPath();
+        lctx.ellipse(c.x, drawY - c.h/2, c.w*0.62, c.h*0.62, 0, 0, Math.PI*2);
+        lctx.stroke();
+        lctx.restore();
+      }
     }
 
     // burst particles
@@ -617,17 +648,29 @@
     const x = e.clientX - r.left, y = e.clientY - r.top;
     const c = hitTest(x, y);
     if(c){
+      selected = c;
       c.vx = (Math.random()<0.5?-1:1) * (60+Math.random()*60);
       c.phase += Math.PI/2;
       spawnBurst(c.x, c.y - c.h/2);
     }
   });
 
-  [[document.getElementById('moveLeftBtn'), -1], [document.getElementById('moveRightBtn'), 1]].forEach(([btn, dir])=>{
-    btn.addEventListener('pointerdown', (e)=>{ e.preventDefault(); steerDir = dir; });
-    btn.addEventListener('pointerleave', ()=>{ if(steerDir === dir) steerDir = 0; });
+  [
+    [document.getElementById('moveLeftBtn'), 'h', -1],
+    [document.getElementById('moveRightBtn'), 'h', 1],
+    [document.getElementById('moveUpBtn'), 'v', -1],
+    [document.getElementById('moveDownBtn'), 'v', 1]
+  ].forEach(([btn, axis, dir])=>{
+    btn.addEventListener('pointerdown', (e)=>{
+      e.preventDefault();
+      if(axis === 'h') steerDir = dir; else steerVert = dir;
+    });
+    btn.addEventListener('pointerleave', ()=>{
+      if(axis === 'h' && steerDir === dir) steerDir = 0;
+      if(axis === 'v' && steerVert === dir) steerVert = 0;
+    });
   });
-  window.addEventListener('pointerup', ()=>{ steerDir = 0; });
+  window.addEventListener('pointerup', ()=>{ steerDir = 0; steerVert = 0; });
 
   document.getElementById('flipCamBtn').addEventListener('click', flipCamera);
 
@@ -657,6 +700,7 @@
 
   document.getElementById('clearBtn').addEventListener('click', ()=>{
     creatures = [];
+    selected = null;
     burst = [];
   });
 
