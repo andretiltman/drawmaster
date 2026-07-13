@@ -81,10 +81,17 @@ export function initScene({ stage, liveCanvas, backdrop }){
     lctx.setTransform(dpr,0,0,dpr,0,0);
     lctx.clearRect(0,0,r.width,r.height);
 
+    // creatures a movement's update() eats/removes this frame — collected and
+    // applied after the loop so we never mutate `creatures` while iterating it
+    const toRemove = new Set();
+    const removeCreature = (target) => toRemove.add(target);
+
     // update + draw creatures
     for(const c of creatures){
       const isDragging = dragging && dragging.c === c;
-      const jumpOffset = isDragging ? 0 : getMovement(c.type).update(c, dt, r, { wallBounce });
+      const jumpOffset = isDragging ? 0 : getMovement(c.type).update(c, dt, r, {
+        wallBounce, creatures, removeCreature, spawnBurst
+      });
       // step cadence speeds up with stride speed, like a real walking gait
       c.phase += (Math.abs(c.vx) * 0.11 + 0.6) * dt;
 
@@ -141,6 +148,11 @@ export function initScene({ stage, liveCanvas, backdrop }){
         lctx.stroke();
         lctx.restore();
       }
+    }
+
+    if(toRemove.size){
+      creatures = creatures.filter(cr => !toRemove.has(cr));
+      if(dragging && toRemove.has(dragging.c)) dragging = null;
     }
 
     // burst particles
